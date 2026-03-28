@@ -34,4 +34,5 @@ npm installed:
 express,
 mysql2,
 bcrypt,
-morgan
+morgan,
+dotenv

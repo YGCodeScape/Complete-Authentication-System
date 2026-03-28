@@ -1,6 +1,16 @@
-import app from "./src/app.js";
+// server.js
+require('dotenv').config();
+const app = require('./src/app');
 
+const { connectDB } = require('./config/config');
 
-app.listen(3000, () => {
-    console.log("server is running ");
+const PORT = process.env.PORT || 3000;
+
+// Connect DB then start server
+connectDB().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+    });
+}).catch((err) => {
+    console.error("Failed to start server:", err);
 });
