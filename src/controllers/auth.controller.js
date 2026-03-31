@@ -1,18 +1,19 @@
 const UserModel = require('../models/user.model');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const register = async(req, res) => {
+
     try {
-        const {username, email, password} = req.body;
+        const {fullName, email, password} = req.body;
 
         // validation
-        if(!username || !email || !password) {
+        if(!fullName || !email || !password) {
             return res.status(400).json({
                 message: "all fields are required"
             });
         }
 
-        // check existing user
         // Check existing user
         const existingUser = await UserModel.findByEmail(email);
         if (existingUser) {
@@ -22,11 +23,25 @@ const register = async(req, res) => {
         }
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create user
-        const user = await UserModel.create({
+        const result = await UserModel.create({
             fullName,
             email,
             password: hashedPassword
+        });
+
+        const token = jwt.sign({
+            id: result.insertId
+        }, process.env.JWT_SECRET, {
+            expiresIn: "1d"
+        });
+
+        res.status(201).json({
+            message: "user registered successfully",
+            user: {
+                fullName,
+                email,
+            },
+            token
         });
 
     }

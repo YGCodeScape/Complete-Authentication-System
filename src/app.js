@@ -8,7 +8,12 @@ const app = express();
 app.use(express.json());
 app.use(morgan("dev"));
 
-// prepix for auth router API's
+// pre pix for auth router API's
 app.use("/api/auth", authRouter);
+
+// Test route
+app.get("/", (req, res) => {
+    res.send("Server is live 🚀");
+});
 
 module.exports = app;

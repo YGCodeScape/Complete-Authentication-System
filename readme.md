@@ -35,4 +35,5 @@ express,
 mysql2,
 bcrypt,
 morgan,
-dotenv
+dotenv,
+jsonwebtoken
