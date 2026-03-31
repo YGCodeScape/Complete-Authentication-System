@@ -26,7 +26,7 @@ const User = {
         return rows;
     },
     //find one user
-    findOne: async (id) => {
+    findById: async (id) => {
         const pool = getDB();
         const [rows] = await pool.execute("SELECT * FROM users WHERE id = ?", [id]);
         return rows[0];

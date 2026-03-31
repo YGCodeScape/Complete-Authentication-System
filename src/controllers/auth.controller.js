@@ -2,6 +2,7 @@ const UserModel = require('../models/user.model');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+// register user with JWT
 const register = async(req, res) => {
 
     try {
@@ -54,6 +55,29 @@ const register = async(req, res) => {
     }
 }
 
+// identifying user from request
+const getMe = async(req, res) => {
+    const token = req.headers.authorization?.split(" ")[ 1 ];
+
+    if(!token) {
+        return res.status(401).json({
+            message: "token not found"
+        })
+    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log(decoded); // get the users id, initialized at and expiry
+
+    const user = await UserModel.findById(decoded.id);
+    res.status(200).json({
+        message: "user fetched successfully",
+        user: {
+            fullName: user.fullName,
+            email: user.email
+        }
+    })
+}
+
 module.exports = {
-    register
+    register,
+    getMe
 }

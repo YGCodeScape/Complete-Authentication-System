@@ -2,7 +2,7 @@ Complete Authentication System | JWT, Refresh Token,OTP, Logout All Devices
 
  Production-Ready Authentication System using Node.js, Express, MYSQL, and JWT.
 
- Instead of a basic login tutorial, this project focuses on industry-level authentication architecture
+ Instead of a basic login this focuses on industry-level authentication architecture
  including:  
  Access Tokens, 
  Refresh Tokens, 
