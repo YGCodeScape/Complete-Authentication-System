@@ -33,7 +33,8 @@ OTP Authentication: Email/OTP Verification Flow
 npm installed: 
 express,
 mysql2,
-bcrypt,
+bcrypt, -- for password hashing
 morgan,
-dotenv,
-jsonwebtoken
+dotenv, - to create env file
+jsonwebtoken, - for generate access token and refresh token 
+cookie-parser  - for storing refresh token on cookies

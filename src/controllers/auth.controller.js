@@ -30,19 +30,31 @@ const register = async(req, res) => {
             password: hashedPassword
         });
 
-        const token = jwt.sign({
+        const accessToken = jwt.sign({  // generate access token
             id: result.insertId
         }, process.env.JWT_SECRET, {
-            expiresIn: "1d"
+            expiresIn: "15m"   // expiry time for access token
         });
 
-        res.status(201).json({
+        const refreshToken = jwt.sign({  // generate refresh token
+            id: result.insertId
+        }, process.env.JWT_SECRET, {
+            expiresIn: "7d"
+        });
+        res.cookie("refreshToken", refreshToken, {
+            httpOnly: true,
+            secure: true,
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 1000 // after 7 days cookies will clean
+        }) 
+
+        res.status(201).json({  // access token response body
             message: "user registered successfully",
             user: {
                 fullName,
                 email,
             },
-            token
+            accessToken
         });
 
     }
