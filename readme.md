@@ -74,8 +74,8 @@ src/
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-username/auth-system-nodejs-jwt.git
-cd auth-system-nodejs-jwt
+git clone https://github.com/YGCodeScape/Complete-Authentication-System.git
+cd Complete Authentication System
 ```
 
 ### 2. Install Dependencies
@@ -174,7 +174,7 @@ npm start
 
 You can reuse this authentication system in:
 
-* Final Year Projects (like Sizzlit)
+* Final Year Projects
 * Startup MVPs
 * SaaS Platforms
 * Client Projects
