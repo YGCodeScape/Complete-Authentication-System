@@ -41,6 +41,15 @@ const User = {
         );
 
         return rows[0];
+    },
+
+    updateVerified: async(userId) => {
+        const pool = getDB();
+        const [rows] = await pool.execute(
+            "UPDATE users SET verified = true WHERE id = ?",
+            [userId]
+        );
+        return rows[0];
     }
 };
 

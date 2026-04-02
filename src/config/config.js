@@ -32,4 +32,5 @@ const getDB = () => {
     return pool;
 };
 
+
 module.exports = { connectDB, getDB };

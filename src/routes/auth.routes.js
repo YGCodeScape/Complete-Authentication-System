@@ -21,6 +21,8 @@ authRouter.get("/logout", authController.logout);
 //logout from all devices
 authRouter.get("/logoutAll", authController.logoutAll);
 
+// verify email 
+authRouter.post("/verify-email", authController.verifyEmail);
 
 
 module.exports = authRouter;

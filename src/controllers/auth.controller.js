@@ -2,6 +2,9 @@ const UserModel = require('../models/user.model');
 const sessionModel = require("../models/session.model");
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const otpModel = require("../models/otp.models");
+const sendEmail = require('../config/mail');
+const { generateOtp, getOtpHtml } = require("../utils/otp");
 
 // helper: generate tokens
 const generateTokens = (userId, sessionId) => {
@@ -46,51 +49,29 @@ const register = async (req, res) => {
 
         const userId = result.insertId;
 
-        // ✅ STEP 1: Create session FIRST
-        const session = await sessionModel.create({
-            user_id: userId,
-            refreshTokenHash: "", // temporary (will update below)
-            user_agent: req.get("user-agent"),
-            ip: req.ip,
-            revoked: false,
-            created_at: new Date(),
-            updated_at: new Date()
+        //  OTP FLOW
+        const otp = generateOtp();
+        const otpHash = await bcrypt.hash(otp, 10);
+
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min
+
+        await otpModel.createOtp({
+            email,
+            userId,
+            otpHash,
+            expiresAt
         });
 
-        const sessionId = session.insertId;
+        const html = getOtpHtml(otp);
 
-        // ✅ STEP 2: Generate tokens with sessionId
-        const accessToken = jwt.sign(
-            { id: userId, sessionId },
-            process.env.JWT_SECRET,
-            { expiresIn: "15m" }
-        );
-
-        const refreshToken = jwt.sign(
-            { id: userId, sessionId },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
-        );
-
-        // ✅ STEP 3: Hash refresh token
-        const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
-
-        // ✅ STEP 4: Update session with hashed token
-        await sessionModel.update(sessionId, {
-            refreshTokenHash
-        });
-
-        // ✅ STEP 5: Set cookie
-        res.cookie("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000
+        await sendEmail({
+            to: email,
+            subject: "Verify Your Email",
+            html
         });
 
         res.status(201).json({
-            message: "User registered successfully",
-            accessToken
+            message: "OTP sent to email. Please verify.",
         });
 
     } catch (error) {
@@ -98,7 +79,6 @@ const register = async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 };
-
 // ---------------- LOGIN ----------------
 const login = async (req, res) => {
     try {
@@ -109,6 +89,11 @@ const login = async (req, res) => {
         if (!user) {
             return res.status(401).json({ message: "Invalid credentials" });
         }
+         if (!user.verified) {
+            return res.status(401).json({
+                message: "email not verified"
+            })
+         }
 
         const isValid = await bcrypt.compare(password, user.password);
 
@@ -332,11 +317,55 @@ const logoutAll = async (req, res) => {
     }
 };
 
+// ---------------- VERIFY EMAIL ----------------
+const verifyEmail = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({ message: "Email and OTP required" });
+        }
+
+        const otpDoc = await otpModel.findByEmail(email);
+
+        if (!otpDoc) {
+            return res.status(400).json({ message: "OTP not found" });
+        }
+
+        // ⏰ Check expiry
+        if (new Date() > new Date(otpDoc.expires_at)) {
+            return res.status(400).json({ message: "OTP expired" });
+        }
+
+        // 🔐 Compare OTP
+        const isMatch = await bcrypt.compare(otp, otpDoc.otp_hash);
+
+        if (!isMatch) {
+            return res.status(401).json({ message: "Invalid OTP" });
+        }
+
+        // ✅ Verify user
+        await UserModel.updateVerified(otpDoc.user_id);
+
+        // 🧹 Cleanup OTPs
+        await otpModel.deleteByUser(otpDoc.user_id);
+
+        return res.status(200).json({
+            message: "Email verified successfully"
+        });
+
+    } catch (error) {
+        console.error("Verify Email Error:", error.message);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
 module.exports = {
     register,
     login,
     getMe,
     refreshToken,
     logout,
-    logoutAll
+    logoutAll,
+    verifyEmail
 };

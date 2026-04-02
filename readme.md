@@ -38,3 +38,6 @@ morgan,
 dotenv, - to create env file
 jsonwebtoken, - for generate access token and refresh token 
 cookie-parser  - for storing refresh token on cookies
+
+nodemailer for otp generation 
+OAuth2 authentication 
