@@ -46,11 +46,40 @@ const session = {
         return rows;
     },
 
-    // Update session (e.g., revoke session)
-    update: async (id, { revoked, updated_at }) => {
+    // Update session (flexible updates)
+    update: async (id, updates) => {
         const pool = getDB();
-        const query = `UPDATE session SET revoked = ?, updated_at = ? WHERE id = ?`;
-        const [result] = await pool.execute(query, [revoked, updated_at, id]);
+        const fields = [];
+        const values = [];
+
+        // Build dynamic UPDATE query based on provided fields
+        if (updates.revoked !== undefined) {
+            fields.push('revoked = ?');
+            values.push(updates.revoked);
+        }
+        if (updates.refreshTokenHash !== undefined) {
+            fields.push('refreshTokenHash = ?');
+            values.push(updates.refreshTokenHash);
+        }
+        if (updates.updated_at !== undefined) {
+            fields.push('updated_at = ?');
+            values.push(updates.updated_at);
+        }
+
+        // Always update timestamp if not explicitly provided
+        if (updates.updated_at === undefined && (updates.revoked !== undefined || updates.refreshTokenHash !== undefined)) {
+            fields.push('updated_at = ?');
+            values.push(new Date());
+        }
+
+        if (fields.length === 0) {
+            return null;
+        }
+
+        const query = `UPDATE session SET ${fields.join(', ')} WHERE id = ?`;
+        values.push(id);
+
+        const [result] = await pool.execute(query, values);
         return result;
     },
 

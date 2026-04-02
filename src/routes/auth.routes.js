@@ -12,4 +12,10 @@ authRouter.get("/get-me", authController.getMe);
 // end point for refresh token client call this api for new access token
 authRouter.get("/refresh-token", authController.refreshToken);
 
+//log out user from current devices
+authRouter.get("/logout", authController.logout);
+
+//logout from all devicec
+authRouter.get("/logutAll", authController.logoutAll);
+
 module.exports = authRouter;
