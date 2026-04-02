@@ -1,4 +1,5 @@
 const UserModel = require('../models/user.model');
+const sessionModel = require("../models/session.model")
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
@@ -30,17 +31,34 @@ const register = async(req, res) => {
             password: hashedPassword
         });
 
-        const accessToken = jwt.sign({  // generate access token
-            id: result.insertId
-        }, process.env.JWT_SECRET, {
-            expiresIn: "15m"   // expiry time for access token
-        });
-
-        const refreshToken = jwt.sign({  // generate refresh token
+        // generate refresh token
+        const refreshToken = jwt.sign({  
             id: result.insertId
         }, process.env.JWT_SECRET, {
             expiresIn: "7d"
         });
+        
+        const refreshTokenHash = await bcrypt.hash(refreshToken, 10)
+
+        const session = await sessionModel.create({
+            user_id: result.insertId,
+            refreshTokenHash,
+            user_agent: req.get("user-agent"),
+            ip: req.ip,
+            revoked: false,
+            created_at: new Date(),
+            updated_at: new Date()
+        })
+
+        // generate access token
+        const accessToken = jwt.sign({ 
+            id: result.insertId,
+            sessionId: session.id
+        }, process.env.JWT_SECRET, {
+            expiresIn: "15m"   // expiry time for access token
+        });
+        
+        // store refresh token in cookie
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
             secure: true,
@@ -100,16 +118,19 @@ const refreshToken = async(req, res) => {
     }
 
     const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    // created new aceess token for user
     const accessToken = jwt.sign({
        id:  decoded.id
     }, process.env.JWT_SECRET,{
         expiresIn: "15m"
     })
+    // created new refresh token 
     const newRefreshToken = jwt.sign({
         id: decoded.id
     }, process.env.JWT_SECRET, {
         expiresIn: "7d"
     })
+    // replace old refresh token to new refresh token
     res.cookie("refreshToken", newRefreshToken, {
         httpOnly: true,
         secure: true,
