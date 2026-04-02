@@ -6,6 +6,9 @@ const authController = require('../controllers/auth.controller')
 // declare api end points for authentication
 authRouter.post("/register", authController.register); 
 
+//user login 
+authRouter.post("/login", authController.login),
+
 // get me end point
 authRouter.get("/get-me", authController.getMe);
 
@@ -15,7 +18,9 @@ authRouter.get("/refresh-token", authController.refreshToken);
 //log out user from current devices
 authRouter.get("/logout", authController.logout);
 
-//logout from all devicec
-authRouter.get("/logutAll", authController.logoutAll);
+//logout from all devices
+authRouter.get("/logoutAll", authController.logoutAll);
+
+
 
 module.exports = authRouter;

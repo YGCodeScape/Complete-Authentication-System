@@ -1,28 +1,41 @@
 const UserModel = require('../models/user.model');
-const sessionModel = require("../models/session.model")
+const sessionModel = require("../models/session.model");
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
-// register user with JWT
-const register = async(req, res) => {
+// helper: generate tokens
+const generateTokens = (userId, sessionId) => {
+    const accessToken = jwt.sign(
+        { id: userId, sessionId },
+        process.env.JWT_SECRET,
+        { expiresIn: "15m" }
+    );
 
+    const refreshToken = jwt.sign({ 
+          id: userId,
+          sessionId: sessionId 
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+    );
+
+    return { accessToken, refreshToken };
+};
+
+// ---------------- REGISTER ----------------
+const register = async (req, res) => {
     try {
-        const {fullName, email, password} = req.body;
+        const { fullName, email, password } = req.body;
 
-        // validation
-        if(!fullName || !email || !password) {
-            return res.status(400).json({
-                message: "all fields are required"
-            });
+        if (!fullName || !email || !password) {
+            return res.status(400).json({ message: "All fields required" });
         }
 
-        // Check existing user
         const existingUser = await UserModel.findByEmail(email);
         if (existingUser) {
-            return res.status(409).json({
-                message: "User already exists"
-            });
+            return res.status(409).json({ message: "User already exists" });
         }
+
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const result = await UserModel.create({
@@ -31,239 +44,299 @@ const register = async(req, res) => {
             password: hashedPassword
         });
 
-        // generate refresh token
-        const refreshToken = jwt.sign({  
-            id: result.insertId
-        }, process.env.JWT_SECRET, {
-            expiresIn: "7d"
-        });
-        
-        const refreshTokenHash = await bcrypt.hash(refreshToken, 10)
+        const userId = result.insertId;
 
+        // ✅ STEP 1: Create session FIRST
         const session = await sessionModel.create({
-            user_id: result.insertId,
-            refreshTokenHash,
+            user_id: userId,
+            refreshTokenHash: "", // temporary (will update below)
             user_agent: req.get("user-agent"),
             ip: req.ip,
             revoked: false,
             created_at: new Date(),
             updated_at: new Date()
-        })
-
-        // generate access token
-        const accessToken = jwt.sign({ 
-            id: result.insertId,
-            sessionId: session.id
-        }, process.env.JWT_SECRET, {
-            expiresIn: "15m"   // expiry time for access token
         });
-        
-        // store refresh token in cookie
+
+        const sessionId = session.insertId;
+
+        // ✅ STEP 2: Generate tokens with sessionId
+        const accessToken = jwt.sign(
+            { id: userId, sessionId },
+            process.env.JWT_SECRET,
+            { expiresIn: "15m" }
+        );
+
+        const refreshToken = jwt.sign(
+            { id: userId, sessionId },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
+
+        // ✅ STEP 3: Hash refresh token
+        const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+
+        // ✅ STEP 4: Update session with hashed token
+        await sessionModel.update(sessionId, {
+            refreshTokenHash
+        });
+
+        // ✅ STEP 5: Set cookie
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
-            secure: true,
-            sameSite: "strict",
-            maxAge: 7 * 24 * 60 * 1000 // after 7 days cookies will clean
-        }) 
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
 
-        res.status(201).json({  // access token response body
-            message: "user registered successfully",
-            user: {
-                fullName,
-                email,
-            },
+        res.status(201).json({
+            message: "User registered successfully",
             accessToken
         });
 
-    }
-    catch (error) {
+    } catch (error) {
         console.error("Register Error:", error.message);
-
-        res.status(500).json({
-            message: "Server error"
-        });
+        res.status(500).json({ message: "Server error" });
     }
-}
+};
 
-// identifying user from request
-const getMe = async(req, res) => {
-    const token = req.headers.authorization?.split(" ")[ 1 ];
-
-    if(!token) {
-        return res.status(401).json({
-            message: "token not found"
-        })
-    }
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log(decoded); // get the users id, initialized at and expiry
-
-    const user = await UserModel.findById(decoded.id);
-    res.status(200).json({
-        message: "user fetched successfully",
-        user: {
-            fullName: user.fullName,
-            email: user.email
-        }
-    })
-}
-
-// new access token and refresh token generated 
-const refreshToken = async(req, res) => {
+// ---------------- LOGIN ----------------
+const login = async (req, res) => {
     try {
-        const token = req.cookies.refreshToken;
+        const { email, password } = req.body;
 
-        if(!token) {
-            return res.status(401).json({
-                message: "refresh token not found"
-            });
+        const user = await UserModel.findByEmail(email);
+
+        if (!user) {
+            return res.status(401).json({ message: "Invalid credentials" });
         }
 
-        // Verify the token first
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const isValid = await bcrypt.compare(password, user.password);
 
-        // Find session by token hash - compare using bcrypt
-        // Get all sessions for this user and check which one matches
-        const userSessions = await sessionModel.findByUserId(decoded.id);
-        let sessionData = null;
-        
-        for (const sess of userSessions) {
-            const isMatchingToken = await bcrypt.compare(token, sess.refreshTokenHash);
-            if (isMatchingToken) {
-                sessionData = sess;
-                break;
-            }
+        if (!isValid) {
+            return res.status(401).json({ message: "Invalid credentials" });
         }
 
-        if(!sessionData) {
-            return res.status(401).json({
-                message: "Invalid refresh token or session expired"
-            })
-        }
-
-        // Create new access token
-        const accessToken = jwt.sign({
-            id: decoded.id,
-            sessionId: sessionData.id
-        }, process.env.JWT_SECRET, {
-            expiresIn: "15m"
-        });
-
-        // Create new refresh token
-        const newRefreshToken = jwt.sign({
-            id: decoded.id
-        }, process.env.JWT_SECRET, {
-            expiresIn: "7d"
-        });
-
-        // Hash the new refresh token
-        const newRefreshTokenHash = await bcrypt.hash(newRefreshToken, 10);
-
-        // Update session with new token hash
-        await sessionModel.update(sessionData.id, {
-            refreshTokenHash: newRefreshTokenHash,
+        // ✅ STEP 1: Create session FIRST
+        const session = await sessionModel.create({
+            user_id: user.id,
+            refreshTokenHash: "", // temporary
+            user_agent: req.get("user-agent"),
+            ip: req.ip,
+            revoked: false,
+            created_at: new Date(),
             updated_at: new Date()
         });
 
-        // Set new refresh token in cookie
-        res.cookie("refreshToken", newRefreshToken, {
+        const sessionId = session.insertId;
+
+        // ✅ STEP 2: Generate tokens with sessionId
+        const accessToken = jwt.sign(
+            { id: user.id, sessionId },
+            process.env.JWT_SECRET,
+            { expiresIn: "15m" }
+        );
+
+        const refreshToken = jwt.sign(
+            { id: user.id, sessionId },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
+
+        // ✅ STEP 3: Hash refresh token
+        const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+
+        // ✅ STEP 4: Update session
+        await sessionModel.update(sessionId, {
+            refreshTokenHash
+        });
+
+        // ✅ STEP 5: Set cookie
+        res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
-            secure: true,
-            sameSite: "strict",
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
         res.status(200).json({
-            message: "Access token refreshed successfully",
+            message: "Login successful",
             accessToken
         });
-    } catch (error) {
-        console.error("Refresh Token Error:", error.message);
-        res.status(500).json({
-            message: "Server error"
-        });
-    }
-}
 
-// Logout user (revoke session)
-const logout = async(req, res) => {
+    } catch (error) {
+        console.error("Login Error:", error.message);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+// ---------------- GET ME ----------------
+const getMe = async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(" ")[1];
+
+        if (!token) {
+            return res.status(401).json({ message: "Token missing" });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        const session = await sessionModel.findById(decoded.sessionId);
+        if (!session) {
+            return res.status(401).json({ message: "Session expired" });
+        }
+
+        const user = await UserModel.findById(decoded.id);
+
+        res.status(200).json({
+            user: {
+                id: user.id,
+                fullName: user.fullName,
+                email: user.email
+            }
+        });
+
+    } catch (error) {
+        res.status(401).json({ message: "Invalid token" });
+    }
+};
+// ---------------- REFRESH TOKEN ----------------
+const refreshToken = async (req, res) => {
     try {
         const token = req.cookies.refreshToken;
 
-        if(!token) {
+        if (!token) {
             return res.status(401).json({
-                message: "Refresh token was not found"
+                message: "No refresh token"
             });
         }
 
-        // Verify token
+        // Verify refresh token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Find matching session using bcrypt comparison
-        const userSessions = await sessionModel.findByUserId(decoded.id);
-        let sessionData = null;
+        //  Directly get session using sessionId (NO LOOP)
+        const sessionData = await sessionModel.findById(decoded.sessionId);
 
-        for (const sess of userSessions) {
-            const isMatchingToken = await bcrypt.compare(token, sess.refreshTokenHash);
-            if (isMatchingToken) {
-                sessionData = sess;
-                break;
-            }
+        if (!sessionData) {
+            return res.status(401).json({
+                message: "Session expired or invalid"
+            });
         }
 
-        if(!sessionData) {
+        // Compare token with stored hash
+        const isValid = await bcrypt.compare(token, sessionData.refreshTokenHash);
+
+        if (!isValid) {
             return res.status(401).json({
                 message: "Invalid refresh token"
             });
         }
 
-        // Revoke the session
-        await sessionModel.revokeById(sessionData.id);
+        // ✅ Generate new access token
+        const newAccessToken = jwt.sign(
+            {
+                id: decoded.id,
+                sessionId: sessionData.id
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "15m" }
+        );
 
-        // Clear the refresh token cookie
+        // ✅ Generate new refresh token (with sessionId)
+        const newRefreshToken = jwt.sign(
+            {
+                id: decoded.id,
+                sessionId: sessionData.id
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
+
+        // ✅ Hash new refresh token
+        const newHash = await bcrypt.hash(newRefreshToken, 10);
+
+        // ✅ Update session with new hash (rotation)
+        await sessionModel.update(sessionData.id, {
+            refreshTokenHash: newHash
+        });
+
+        // ✅ Set new cookie
+        res.cookie("refreshToken", newRefreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+
+        // ✅ Send new access token
+        res.status(200).json({
+            message: "Token refreshed successfully",
+            accessToken: newAccessToken
+        });
+
+    } catch (error) {
+        console.error("Refresh Token Error:", error.message);
+
+        return res.status(401).json({
+            message: "Invalid or expired refresh token"
+        });
+    }
+};
+
+// ---------------- LOGOUT ----------------
+const logout = async (req, res) => {
+    try {
+        const token = req.cookies.refreshToken;
+
+        if (!token) {
+            return res.status(400).json({ message: "No token" });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        const sessions = await sessionModel.findByUserId(decoded.id);
+
+        for (const s of sessions) {
+            const match = await bcrypt.compare(token, s.refreshTokenHash);
+            if (match) {
+                await sessionModel.revokeById(s.id);
+                break;
+            }
+        }
+
+        res.clearCookie("refreshToken");
+
+        res.status(200).json({ message: "Logged out" });
+
+    } catch (error) {
+        res.status(500).json({ message: "Error logging out" });
+    }
+};
+
+// ---------------- LOGOUT ALL ----------------
+const logoutAll = async (req, res) => {
+    try {
+        const token = req.cookies.refreshToken;
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        await sessionModel.revokeByUserId(decoded.id);
+
         res.clearCookie("refreshToken");
 
         res.status(200).json({
-            message: "Logged out successfully"
+            message: "Logged out from all devices"
         });
+
     } catch (error) {
-        console.error("Logout Error:", error.message);
-        res.status(500).json({
-            message: "Server error"
-        });
+        res.status(500).json({ message: "Error" });
     }
-}
-
-const logoutAll = async(req, res) => {
-    const refreshToken = req.cookies.refreshToken;
-
-        if(!refreshToken) {
-            return res.status(401).json({
-                message: "Refresh token was not found"
-            });
-        }
-    
-    const decode = jwt.verify(refreshToken, process.env.JWT_SECRET)
-
-    await sessionModel.update({
-        user: decode.id,
-        revoked: false
-    }, {
-        revoked: true
-    })
-
-    res.clearCookie("refreshToken")
-
-    res.status(200).json({
-        message: "Logged out from all devices successfully"
-    })
-
-    
-}
+};
 
 module.exports = {
     register,
+    login,
     getMe,
     refreshToken,
     logout,
     logoutAll
-}
+};
