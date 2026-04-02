@@ -89,7 +89,42 @@ const getMe = async(req, res) => {
     })
 }
 
+// new access token and refresh token generated 
+const refreshToken = async(req, res) => {
+    const refreshToken = req.cookies.refreshToken;
+
+    if(!refreshToken) {
+        return res.status(401).json({
+            message: "refresh token not found"
+        });
+    }
+
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const accessToken = jwt.sign({
+       id:  decoded.id
+    }, process.env.JWT_SECRET,{
+        expiresIn: "15m"
+    })
+    const newRefreshToken = jwt.sign({
+        id: decoded.id
+    }, process.env.JWT_SECRET, {
+        expiresIn: "7d"
+    })
+    res.cookie("refreshToken", newRefreshToken, {
+        httpOnly: true,
+        secure: true,
+        samSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    })
+
+    res.status(200).json({
+        message: "Access token refreshed successfully",
+        accessToken
+    });
+}
+
 module.exports = {
     register,
-    getMe
+    getMe,
+    refreshToken
 }
