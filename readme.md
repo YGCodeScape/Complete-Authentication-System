@@ -33,6 +33,7 @@ This system is designed to be **reusable across multiple projects** like SaaS ap
 * 🚪 Logout (single device & all devices)
 * 🍪 HTTP-only secure cookies
 * 🔒 Password & token hashing (bcrypt)
+* 🔁 Forgot & Reset Password (Token-based)
 
 ---
 
@@ -60,7 +61,8 @@ src/
  ├── models/
  │    ├── user.model.js
  │    ├── session.model.js
- │    └── otp.model.js
+ │    ├── otp.model.js
+ |    └── passwordReset.model.js
  ├── routes/
  │    └── auth.routes.js
  └── utils/
@@ -117,15 +119,17 @@ npm start
 
 ### Auth Routes (`/api/auth`)
 
-| Method | Endpoint       | Description              |
-| ------ | -------------- | ------------------------ |
-| POST   | /register      | Register user & send OTP |
-| POST   | /verify-email  | Verify OTP               |
-| POST   | /login         | Login user               |
-| GET    | /get-me        | Get current user         |
-| GET    | /refresh-token | Get new access token     |
-| GET    | /logout        | Logout current session   |
-| GET    | /logoutAll     | Logout from all devices  |
+| Method | Endpoint          | Description                     |
+| ------ | --------------    | ------------------------        |
+| POST   | /register         | Register user & send OTP        |
+| POST   | /verify-email     | Verify OTP                      |
+| POST   | /login            | Login user                      |
+| GET    | /get-me           | Get current user                |
+| GET    | /refresh-token    | Get new access token            |
+| GET    | /logout           | Logout current session          |
+| GET    | /logoutAll        | Logout from all devices         |
+| POST   | /forgot-password  | Send password reset link        |
+| POST   | /reset-password   | Reset password using token      |
 
 ---
 
@@ -152,7 +156,21 @@ npm start
 * Generates new access token
 * Rotates refresh token
 
-### 5. Logout
+### 5. Forgot Password
+
+* User enters email
+* Secure reset token generated
+* Token stored in DB with expiry
+* Reset link sent via email
+
+### 6. Reset Password
+
+* User submits new password with token
+* Token is verified & checked for expiry
+* Password updated
+* Token deleted (one-time use)
+
+### 7. Logout
 
 * Revokes session
 
@@ -167,6 +185,8 @@ npm start
 * Token expiration strategy
 * Session-based validation
 * Refresh token rotation
+* Reset tokens stored with expiry
+* One-time use reset tokens (deleted after use)
 
 ---
 
@@ -193,6 +213,8 @@ You can reuse this authentication system in:
 * Resend OTP with cooldown
 * Role-based authentication (RBAC)
 * Middleware for route protection
+* Rate limiting (OTP, login & forgot password)
+* Hashed reset tokens (SHA256 for extra security)
 
 ---
 
