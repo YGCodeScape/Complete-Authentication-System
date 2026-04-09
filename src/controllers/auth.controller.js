@@ -1,8 +1,10 @@
 const UserModel = require('../models/user.model');
-const sessionModel = require("../models/session.model");
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const otpModel = require("../models/otp.models");
+const sessionModel = require("../models/session.model");
+const PasswordResetModel = require('../models/passwordReset.model');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const sendEmail = require('../config/mail');
 const { generateOtp, getOtpHtml } = require("../utils/otp");
 
@@ -360,6 +362,103 @@ const verifyEmail = async (req, res) => {
     }
 };
 
+// ---------------- FORGOT PASSWORD ----------------
+const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                 message: 'Email is required' 
+            });
+        }
+
+        const user = await UserModel.findByEmail(email);
+
+        if (!user) {
+            return res.status(404).json({ 
+                message: 'User not found' 
+            });
+        }
+
+        // Generate secure token
+        const token = crypto.randomBytes(32).toString('hex');
+
+        // Expiry: 15 minutes
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+        // Remove old tokens
+        await PasswordResetModel.deleteByUserId(user.id);
+
+        // Save new token
+        await PasswordResetModel.createToken(user.id, token, expiresAt);
+
+        // Reset link (frontend URL)
+        const resetLink = `http://localhost:3000/reset-password?token=${token}`;
+
+        // Send email
+        await sendEmail({
+            to: email,
+            subject: 'Reset Your Password',
+            html: `<p>Click below to reset your password:</p>
+                   <a href="${resetLink}">${resetLink}</a>
+                   <p>This link expires in 15 minutes.</p>`
+        });
+
+        res.status(200).json({
+             message: 'Password reset link sent to email'
+        });
+
+    } catch (error) {
+        console.error('Forgot Password Error:', error);
+        res.status(500).json({ 
+            message: 'Internal server error' 
+        });
+    }
+};
+// ---------------- RESET PASSWORD ----------------
+const resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+
+        if (!token || !newPassword) {
+            return res.status(400).json({
+                 message: 'Token and new password required'
+             });
+        }
+
+        const resetEntry = await PasswordResetModel.findByToken(token);
+
+        if (!resetEntry) {
+            return res.status(400).json({
+                 message: 'Invalid token' 
+            });
+        }
+
+        // Check expiry
+        if (new Date(resetEntry.expires_at) < new Date()) {
+            return res.status(400).json({ 
+               message: 'Token expired' 
+          });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update user password
+        await UserModel.updatePassword(resetEntry.user_id, hashedPassword);
+
+        // Delete token after use
+        await PasswordResetModel.deleteByUserId(resetEntry.user_id);
+
+        res.status(200).json({ message: 'Password reset successful' });
+
+    } catch (error) {
+        console.error('Reset Password Error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
 module.exports = {
     register,
     login,
@@ -367,5 +466,7 @@ module.exports = {
     refreshToken,
     logout,
     logoutAll,
-    verifyEmail
+    verifyEmail,
+    forgotPassword,
+    resetPassword
 };

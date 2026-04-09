@@ -1,7 +1,7 @@
 const express = require('express');
 const authRouter = express.Router();
 
-const authController = require('../controllers/auth.controller')
+const authController = require('../controllers/auth.controller');
 
 // declare api end points for authentication
 authRouter.post("/register", authController.register); 
@@ -23,6 +23,12 @@ authRouter.get("/logoutAll", authController.logoutAll);
 
 // verify email 
 authRouter.post("/verify-email", authController.verifyEmail);
+
+//forgot password
+authRouter.post("/forgot-password", authController.forgotPassword);
+
+//reset password
+authRouter.post("/reset-password", authController.resetPassword );
 
 
 module.exports = authRouter;

@@ -50,6 +50,14 @@ const User = {
             [userId]
         );
         return rows[0];
+    },
+   updatePassword: async (userId, password) => {
+      const pool = getDB();
+      const [ rows ] = await pool.execute(
+          "UPDATE users SET password = ? WHERE id = ?",
+          [password, userId]
+      );
+      return rows[0];
     }
 };
 
